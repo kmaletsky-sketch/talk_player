@@ -1,16 +1,36 @@
+TARGET=main
+
+OBJS=$(TARGET).o
+ELF=$(TARGET).elf
+HEX=$(TARGET).hex
+
+# The frequency at which the Tiny402 will be running. This doesn't change the frequency
+#  but rather makes the delay() routine work accurately
+F_CPU=20000000L
+
+
 MCU=attiny402
-F_CPU=16000000UL
+CFLAGS=-mmcu=attiny402 -B ../Atmel.ATtiny_DFP.1.6.326/gcc/dev/attiny402/ -O3
+CFLAGS+=-I ../Atmel.ATtiny_DFP.1.6.326/include/ -DF_CPU=$(F_CPU)
+LDFLAGS=-mmcu=attiny402 -B ../Atmel.ATtiny_DFP.1.6.326/gcc/dev/attiny402/
+
 CC=avr-gcc
-CFLAGS=-mmcu=$(MCU) -DF_CPU=$(F_CPU) -Os -Wall
+LD=avr-gcc
 OBJTOOL=avr-objcopy
 
-all: main.hex
+all: $(HEX)
 
-main.elf: main.c
-	$(CC) $(CFLAGS) -o $@ $^
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@ 
 
-main.hex: main.elf
+$(ELF):	$(OBJS)
+	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
+
+$(HEX): $(ELF)
 	$(OBJTOOL) -O ihex -R .eeprom $< $@
+	
+flash:  main.hex
+	pymcuprog write -v debug -d attiny402 -t uart -u /dev/cu.wchusbserial8310 -c 115k --erase --verify -f $(TARGET).hex
 
 clean:
-	rm -f main.elf main.hex
+	rm -rf $(OBJS) $(ELF) $(HEX)
