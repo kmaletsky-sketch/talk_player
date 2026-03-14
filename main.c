@@ -1,6 +1,7 @@
-#ifndef F_CPU
-#define F_CPU 16000000UL
-#endif
+/*
+ * Talk to DFplayer with attiny402 and return status. Just a sample action at this time.
+ *   Later will add pin inputs to drive specific commands
+ */
 
 #include <avr/io.h>
 #include <util/delay.h>
