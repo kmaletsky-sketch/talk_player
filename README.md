@@ -5,22 +5,12 @@ Files:
 - Makefile: build with avr-gcc for attiny402
 
 Notes:
-- Default `F_CPU` is 16 MHz in the source. Adjust `F_CPU` in `main.c` and the Makefile if your device runs at a different clock frequency.
 - DFPlayer protocol: frame = 0x7E 0xFF 0x06 cmd feedback p1 p2 checksum_hi checksum_lo 0xEF
 - The implementation is software UART; it uses blocking polling for RX. It is simple and portable but not interrupt-driven.
-
-Build:
-
-```sh
-make
-# flash with your preferred programmer, e.g.:
-# avrdude -p attiny402 -c <prog> -P <port> -U flash:w:main.hex
-```
 
 Wiring:
 - Connect PA6 (TX from MCU) to RX of DFPlayer
 - Connect PA7 (RX to MCU) to TX of DFPlayer
 - Shared GND required
 
-Adjustments:
-- For reliable timing, ensure `F_CPU` matches the MCU clock (internal oscillator or external crystal).
+
