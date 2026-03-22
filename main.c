@@ -1,11 +1,40 @@
 /*
- * Talk to DFplayer with attiny402 and return status. Just a sample action at this time.
- *   Later will add pin inputs to drive specific commands
+ * Talk to DFplayer with Tiny402 and play track 001.mp3
  */
 
 #include <avr/io.h>
 #include <util/delay.h>
 #include <stdint.h>
+
+#define	PLAY_TRACK_CMD		0x03
+
+#define	QUERY_STATUS_CMD	0x42
+#define	QUERY_STATUS_BYTE	6		   // Index 8 (7th byte) is the useful status
+#define	QUERY_STOPPED			0
+#define	QUERY_PLAYING			1
+#define	QUERY_BUSY  			4			// such as initialization
+
+#define	RESP_SIZE					10		// All responses should be this long
+
+// Heartbeat and diagnostic routines
+static void flash_led(uint8_t count_flash) {
+	uint8_t i;
+	
+	for(i=0; i<count_flash; ++i)
+	{
+    PORTA.OUTCLR = (1<<1);
+    _delay_ms(200);
+		PORTA.OUTSET = (1<<1);
+		_delay_ms(200);		
+	}	
+}
+
+static void led_on(void) {
+    PORTA.OUTCLR = (1<<1);
+}
+static void led_off(void) {
+    PORTA.OUTSET = (1<<1);
+}
 
 // Pin definitions (PA6 = TX, PA7 = RX) — use device-pack macros
 #define TX_PIN_bm PIN6_bm
@@ -18,6 +47,7 @@
 
 // Simple blocking bit-banged UART TX
 static void uart_init_pins(void) {
+	
     // TX output, drive high (idle)
     PORTA_DIRSET = TX_PIN_bm;
     PORTA_OUTSET = TX_PIN_bm;
@@ -29,6 +59,7 @@ static void uart_init_pins(void) {
 
 static void uart_tx_byte(uint8_t b) {
     uint8_t i;
+    
     // start bit (low)
     PORTA_OUTCLR = TX_PIN_bm;
     _delay_us(BIT_US);
@@ -109,38 +140,59 @@ static uint8_t dfplayer_read_resp(uint8_t *buf, uint8_t max_len, uint32_t timeou
     // read until end byte 0xEF or buffer full
     while (idx < max_len) {
         uint8_t v = uart_rx_byte(200000); // 200ms per byte timeout
-        if (v == 0) break;
+        //if (v == 0) break;
         buf[idx++] = v;
         if (v == 0xEF) break;
     }
     return idx;
 }
 
+// Get status. In general, we expect to wait between queries but in some
+//   situations might not want the wait
+static uint8_t dfplayer_get_status(uint32_t wait_ms) {
+		uint8_t resp_buf[16];		// should only ever be 10 bytes...
+
+    // Query status to see when it's done playing or initializeing
+    while(1) {
+			_delay_ms(wait_ms);
+	    dfplayer_send_cmd(QUERY_STATUS_CMD, 0x00, 0x00, 0x00);		// status query
+
+	    // read response
+	    uint8_t n = dfplayer_read_resp(resp_buf, sizeof(resp_buf), 500);
+	   	if (n != RESP_SIZE)
+	   		{ flash_led(2); continue;	} // try again on a failure
+	   		
+	   	return(resp_buf[QUERY_STATUS_BYTE]);	// Para2 is the only byte we care about
+	  }
+}
+
+// Play track one and then stop. Mostly just a test of the various functions
 int main(void) {
+		// set clock rate to 20Mhz (assuming fuse 0x02 is set to 2)
+		_PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0); 
+
     // Initialize pins
     uart_init_pins();
+    PORTA.DIRSET = (1<<1);	// LED heartbeat
+    PORTA.OUTSET = (1<<1);
+    
+    flash_led(1);	// Startup signal
 
-    _delay_ms(100); // let DFPlayer power up
-
-    // Example: send command to play track 1 (command 0x03, params hi/lo = 0x00 0x01)
-    dfplayer_send_cmd(0x03, 0x00, 0x00, 0x01);
-
-    // read response
-    uint8_t buf[16];
-    uint8_t n = dfplayer_read_resp(buf, sizeof(buf), 500);
-
-    // Echo any response back to TX (for debugging)
-    for (uint8_t i = 0; i < n; ++i) {
-        uart_tx_byte(buf[i]);
+		// let DFPlayer power up. Could take from 1-5 seconds
+		while(dfplayer_get_status(500) == QUERY_BUSY) ;
+		
+    // Send command to play track 1 (command 0x03, params hi/lo = 0x00 0x01)
+    dfplayer_send_cmd(PLAY_TRACK_CMD, 0x00, 0x00, 0x01);
+    
+		// Send command to loop all tracks (command 0x11, params hi/lo = 0x00 0x01)
+    //dfplayer_send_cmd(0x11, 0x00, 0x00, 0x01);
+    
+    // Query status to see when it's done playing
+		while(dfplayer_get_status(500) == QUERY_PLAYING) {    	
+	    flash_led(1);
     }
-
-    // Main loop: send simple heartbeat every 5s and read responses
-    while (1) {
-        _delay_ms(5000);
-        dfplayer_send_cmd(0x0E, 0x00, 0x00, 0x00); // query status (example)
-        n = dfplayer_read_resp(buf, sizeof(buf), 500);
-        for (uint8_t i = 0; i < n; ++i) uart_tx_byte(buf[i]);
-    }
-
-    return 0;
+    
+	  led_off();	// not strictly necessary but suppresses compiler warning for unused function
+	  led_on();
+		while(1);
 }
